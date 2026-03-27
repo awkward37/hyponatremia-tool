@@ -337,9 +337,52 @@
     }
     .treat-calc strong { color: #1a365d; }
 
-    /* Responsive */
-    @media (max-width: 500px) {
+    /* Validation hints */
+    .field-hint {
+      font-size: 0.74rem;
+      margin-top: 2px;
+      min-height: 1em;
+      line-height: 1.3;
+    }
+    .field-hint.warn  { color: #92400e; }
+    .field-hint.error { color: #9b2c2c; font-weight: 600; }
+
+    .field input.input-warn  { border-color: #f6ad55; background: #fffaf0; }
+    .field input.input-error { border-color: #fc8181; background: #fff5f5; }
+
+    /* ── Mobile optimisation ── */
+    /* Tablet & narrow */
+    @media (max-width: 680px) {
+      body { padding: 12px; }
+
+      h1 { font-size: 1.3rem; }
+
+      .input-card { padding: 16px 14px; }
+
+      .input-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+
+      .btn-row { flex-direction: column; }
+      .btn-primary, .btn-reset { width: 100%; padding: 13px; font-size: 1rem; }
+
+      .step { padding: 14px 16px; }
+
+      .diagnosis-card { padding: 16px 14px; }
+
+      .tracking-table th,
+      .tracking-table td { padding: 6px 7px; font-size: 0.78rem; }
+    }
+
+    /* Phone */
+    @media (max-width: 420px) {
       .input-grid { grid-template-columns: 1fr; }
+
+      .field input, .field select { padding: 10px 12px; font-size: 1rem; }
+
+      .tracking-row { flex-wrap: wrap; gap: 6px; }
+
+      .badge { font-size: 0.72rem; padding: 2px 7px; }
+
+      .treat-calc { font-size: 0.8rem; }
     }
   </style>
 </head>
@@ -930,6 +973,101 @@ function analyze() {
 
   render(out);
 }
+
+// ─── 入力バリデーション ───
+const FIELD_RULES = {
+  serum_na:  { errMin: 95,  warnMin: 110, warnMax: 145, errMax: 165, unit: 'mEq/L',
+                warnMinMsg: '低値です（低Na血症の範囲）', warnMaxMsg: '正常上限以上です（正常 135〜145）',
+                errMinMsg:  '異常低値（< 95）を確認してください', errMaxMsg: '異常高値（> 165）を確認してください' },
+  glucose:   { errMin: 20,  warnMin: 40,  warnMax: 600, errMax: 1500, unit: 'mg/dL',
+                warnMinMsg: '低値（低血糖の可能性）', warnMaxMsg: '高値（高浸透圧状態に注意）',
+                errMinMsg:  '異常低値（< 20）を確認してください', errMaxMsg: '異常高値（> 1500）を確認してください' },
+  bun:       { errMin: 1,   warnMin: 3,   warnMax: 120, errMax: 300, unit: 'mg/dL',
+                warnMinMsg: '低値（肝不全・低栄養の可能性）', warnMaxMsg: '高値（腎不全・脱水に注意）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値（> 300）を確認してください' },
+  serum_osm: { errMin: 200, warnMin: 250, warnMax: 340, errMax: 420, unit: 'mOsm/kg',
+                warnMinMsg: '低値（重度低張状態）', warnMaxMsg: '高値（高浸透圧）',
+                errMinMsg:  '異常低値（< 200）を確認してください', errMaxMsg: '異常高値（> 420）を確認してください' },
+  urine_osm: { errMin: 20,  warnMin: 40,  warnMax: 1100, errMax: 1400, unit: 'mOsm/kg',
+                warnMinMsg: '低値（水利尿を示唆）', warnMaxMsg: '高値（濃縮尿）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値（> 1400）を確認してください' },
+  urine_na:  { errMin: 0,   warnMin: 0,   warnMax: 200, errMax: 400, unit: 'mEq/L',
+                warnMinMsg: '', warnMaxMsg: '高値（腎性Na喪失・SIADH）',
+                errMinMsg:  '負値は無効です', errMaxMsg: '異常高値（> 400）を確認してください' },
+  serum_cr:  { errMin: 0.2, warnMin: 0.3, warnMax: 10,  errMax: 25, unit: 'mg/dL',
+                warnMinMsg: '低値（筋肉量低下の可能性）', warnMaxMsg: '高値（腎不全に注意）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値（> 25）を確認してください' },
+  urine_cr:  { errMin: 5,   warnMin: 15,  warnMax: 500, errMax: 800, unit: 'mg/dL',
+                warnMinMsg: '低値（希釈尿または採取誤差の可能性）', warnMaxMsg: '高値（濃縮尿）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値を確認してください' },
+  uric_acid: { errMin: 0.5, warnMin: 1,   warnMax: 12,  errMax: 20, unit: 'mg/dL',
+                warnMinMsg: '低値（SIADH で低尿酸血症は典型的）', warnMaxMsg: '高値（痛風・腎不全の可能性）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値を確認してください' },
+  serum_k:   { errMin: 1.5, warnMin: 2.5, warnMax: 6.0, errMax: 9.0, unit: 'mEq/L',
+                warnMinMsg: '低K血症（低K血症は過剰補正リスク増加）', warnMaxMsg: '高K血症（副腎不全を疑う）',
+                errMinMsg:  '致死的低K血症の可能性（要確認）', errMaxMsg: '致死的高K血症の可能性（要確認）' },
+  weight:    { errMin: 20,  warnMin: 30,  warnMax: 200, errMax: 300, unit: 'kg',
+                warnMinMsg: '低体重（TBW係数が小さくなります）', warnMaxMsg: '高体重（入力値を確認してください）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値を確認してください' },
+  ivc_diam:  { errMin: 0.3, warnMin: 0.5, warnMax: 3.5, errMax: 5.0, unit: 'cm',
+                warnMinMsg: '極細小（重度低体液量の可能性）', warnMaxMsg: '拡張（高体液量・心不全の可能性）',
+                errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値を確認してください' },
+};
+
+function initValidation() {
+  Object.keys(FIELD_RULES).forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const hint = document.createElement('span');
+    hint.className = 'field-hint';
+    hint.id = id + '_vhint';
+    el.parentNode.insertBefore(hint, el.nextSibling);
+    el.addEventListener('input', () => validateField(id));
+  });
+}
+
+function validateField(id) {
+  const rule = FIELD_RULES[id];
+  if (!rule) return;
+  const el = document.getElementById(id);
+  const hint = document.getElementById(id + '_vhint');
+  if (!el || !hint) return;
+
+  const raw = el.value;
+  if (raw === '') {
+    el.classList.remove('input-warn', 'input-error');
+    hint.textContent = '';
+    hint.className = 'field-hint';
+    return;
+  }
+  const v = parseFloat(raw);
+  if (isNaN(v)) {
+    el.classList.add('input-error');
+    el.classList.remove('input-warn');
+    hint.textContent = '数値を入力してください';
+    hint.className = 'field-hint error';
+    return;
+  }
+  if (v < rule.errMin || v > rule.errMax) {
+    el.classList.add('input-error');
+    el.classList.remove('input-warn');
+    hint.textContent = v < rule.errMin ? rule.errMinMsg : rule.errMaxMsg;
+    hint.className = 'field-hint error';
+  } else if ((rule.warnMin !== undefined && v < rule.warnMin && rule.warnMinMsg) ||
+             (rule.warnMax !== undefined && v > rule.warnMax && rule.warnMaxMsg)) {
+    el.classList.add('input-warn');
+    el.classList.remove('input-error');
+    const msg = v < rule.warnMin ? rule.warnMinMsg : rule.warnMaxMsg;
+    hint.textContent = msg ? `⚠ ${msg}` : '';
+    hint.className = 'field-hint warn';
+  } else {
+    el.classList.remove('input-warn', 'input-error');
+    hint.textContent = '';
+    hint.className = 'field-hint';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', initValidation);
 
 // ─── 補正Na（高血糖補正）───
 function calcCorrectedNa() {
