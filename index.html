@@ -384,12 +384,79 @@
 
       .treat-calc { font-size: 0.8rem; }
     }
+
+    /* Case history */
+    .history-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 0.85rem;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-item .hi-name { font-weight: 700; color: #2d3748; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .history-item .hi-date { color: #a0aec0; font-size: 0.75rem; white-space: nowrap; }
+
+    .btn-save {
+      background: #48bb78;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 18px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-save:hover { background: #38a169; }
+
+    /* Diagnostic rationale */
+    .rationale-details { margin-top: 12px; }
+    .rationale-summary {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #4a5568;
+      cursor: pointer;
+      user-select: none;
+      list-style: none;
+      padding: 4px 0;
+    }
+    .rationale-summary::-webkit-details-marker { display: none; }
+    .rationale-summary::before { content: '▶ '; font-size: 0.7rem; color: #a0aec0; }
+    details[open] > .rationale-summary::before { content: '▼ '; }
+    .rationale-body {
+      margin-top: 8px;
+      padding: 10px 14px;
+      background: #f7fafc;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      line-height: 1.7;
+    }
+
+    /* References */
+    .ref-section { padding: 16px 24px; }
+    .ref-section summary {
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #2d3748;
+      list-style: none;
+      border-left: 4px solid #4299e1;
+      padding-left: 10px;
+    }
+    .ref-section summary::-webkit-details-marker { display: none; }
   </style>
 </head>
 <body>
 <div class="container">
   <h1>低Na血症 鑑別ツール</h1>
   <p class="subtitle">血清Na &lt; 135 mEq/L の系統的鑑別</p>
+
+  <div id="history-panel" class="input-card" style="display:none;">
+    <h2>📁 症例履歴</h2>
+    <div id="history-list"></div>
+  </div>
 
   <div class="input-card">
     <h2>検査値入力</h2>
@@ -505,6 +572,7 @@
 
     <div class="btn-row">
       <button class="btn-primary" onclick="analyze()">鑑別を実行</button>
+      <button class="btn-save" onclick="saveCase()">保存</button>
       <button class="btn-reset" onclick="resetAll()">リセット</button>
     </div>
   </div>
@@ -526,6 +594,19 @@
   </div>
 
   <div id="result"></div>
+
+  <details class="input-card ref-section" style="margin-top:20px;">
+    <summary>参考文献・ガイドライン</summary>
+    <ol style="padding-left:20px;font-size:0.82rem;color:#4a5568;line-height:2.1;margin-top:14px;">
+      <li>Spasovski G, et al. Clinical practice guideline on diagnosis and treatment of hyponatraemia. <em>Eur J Endocrinol.</em> 2014;170(3):G1-47.</li>
+      <li>Sterns RH. Disorders of plasma sodium — causes, consequences, and correction. <em>N Engl J Med.</em> 2015;372(1):55-65.</li>
+      <li>Adrogue HJ, Madias NE. Hyponatremia. <em>N Engl J Med.</em> 2000;342(21):1581-1589.</li>
+      <li>Hoorn EJ, Zietse R. Diagnosis and treatment of hyponatremia: compilation of the guidelines. <em>J Am Soc Nephrol.</em> 2017;28(5):1340-1349.</li>
+      <li>Verbalis JG, et al. Diagnosis, evaluation, and treatment of hyponatremia: expert panel recommendations. <em>Am J Med.</em> 2013;126(10 Suppl 1):S1-42.</li>
+      <li>Hillier TA, Abbott RD, Barrett EJ. Hyponatremia: evaluating the correction factor for hyperglycemia. <em>Am J Med.</em> 1999;106(4):399-403.</li>
+    </ol>
+    <p style="font-size:0.75rem;color:#a0aec0;margin-top:8px;">※ 本ツールは教育・参考目的です。臨床判断は担当医師の責任において行ってください。</p>
+  </details>
 </div>
 
 <script>
@@ -658,14 +739,31 @@ function step(color, label, title, body) {
   </div>`;
 }
 
-function dxBox(title, tag, items, extra='') {
+// 診断根拠クライテリア行
+function crit(met, text) {
+  const [icon, color] = met === true  ? ['✓', '#276749'] :
+                         met === false ? ['✗', '#c53030']  :
+                                         ['?', '#a0aec0'];
+  const textColor = met === null ? '#a0aec0' : '#2d3748';
+  return `<div style="display:flex;gap:6px;padding:2px 0;font-size:0.8rem;line-height:1.4;">
+    <span style="color:${color};font-weight:700;min-width:14px;flex-shrink:0;">${icon}</span>
+    <span style="color:${textColor};">${text}</span>
+  </div>`;
+}
+
+function dxBox(title, tag, items, extra='', rationale='') {
   const listItems = items.map(([icon, name, detail]) =>
     `<li><span class="icon">${icon}</span><span><span class="dx-name">${name}</span><br><span class="dx-detail">${detail}</span></span></li>`
   ).join('');
+  const rationaleHtml = rationale ? `
+    <details class="rationale-details">
+      <summary class="rationale-summary">今回の検査値からの診断根拠</summary>
+      <div class="rationale-body">${rationale}</div>
+    </details>` : '';
   return `<div class="diagnosis-card result-box">
     <h3>🔍 考えられる鑑別診断 <span class="tag">${tag}</span></h3>
     <ul class="dx-list">${listItems}</ul>
-    ${extra}
+    ${extra}${rationaleHtml}
   </div>`;
 }
 
@@ -748,20 +846,31 @@ function analyze() {
   // 高張性
   if (osmCategory === 'hyper') {
     const glucoseCorr = glucose !== null ? ` 補正Na = Na + 1.6 × (血糖 - 100)/100 = <strong>${(na + 1.6*(glucose-100)/100).toFixed(1)} mEq/L</strong>` : '';
+    const rat_hyper = [
+      crit(true, `血清浸透圧 ${serum_osm} mOsm/kg（> 295 → 高張性確認）`),
+      glucose !== null ? crit(glucose > 200, `血糖 ${glucose} mg/dL${glucose > 200 ? '（高値）→ 高血糖による希釈性低Na血症を支持' : '（正常域）→ 高張液投与などを考慮'}`) : crit(null, '血糖（未入力）→ 高血糖の評価不可'),
+      crit(null, '高張液投与歴（マンニトール・造影剤）: 投与歴・使用薬剤を確認してください'),
+    ].join('');
     out.push(dxBox('高張性低Na血症', '高浸透圧', [
       ['🩸','高血糖（糖尿病性高浸透圧状態）','血糖100mg/dL上昇ごとにNaは約1.6 mEq/L低下。' + glucoseCorr],
       ['💉','高張液投与（マンニトール・造影剤）','投与歴を確認'],
       ['🧪','その他（スクロース・グリセリンなど）','まれ'],
-    ]));
+    ], '', rat_hyper));
     render(out); return;
   }
 
   // 等張性（偽性）
   if (osmCategory === 'iso') {
+    const rat_iso = [
+      crit(true, `血清浸透圧 ${serum_osm} mOsm/kg（280〜295 → 等張性）`),
+      crit(null, '血漿トリグリセリド値: 重篤な高TG血症は偽性低Na血症の原因になります'),
+      crit(null, '血漿総タンパク値: 多発性骨髄腫などによる高タンパク血症を確認'),
+      crit(null, '直接ISE法（血ガス）でのNa: 偽性低Na血症なら血ガスNaは正常域'),
+    ].join('');
     out.push(dxBox('等張性低Na血症（偽性低Na血症）', '等浸透圧', [
       ['🧈','高脂血症（重篤な高トリグリセリド血症）','脂肪層が水相を希釈'],
       ['🧬','高タンパク血症（多発性骨髄腫など）','タンパク質が水相を希釈'],
-    ], '<div class="info-box">※ 炎症吸光法（直接法）の血ガス分析では偽性低Na血症は生じない。</div>'));
+    ], '<div class="info-box">※ 炎症吸光法（直接法）の血ガス分析では偽性低Na血症は生じない。</div>', rat_iso));
     render(out); return;
   }
 
@@ -779,11 +888,17 @@ function analyze() {
   let uosmBody = `尿浸透圧 = <strong>${urine_osm} mOsm/kg</strong>（${urine_osm_source}）`;
   if (urine_osm < 100) {
     out.push(step('blue','STEP 2','尿浸透圧 < 100 mOsm/kg → 水利尿', uosmBody + '<br>ADH 抑制された状態。腎の水排泄は正常。' + sgEstNote));
+    const rat_water = [
+      crit(true, `尿浸透圧 ${urine_osm} mOsm/kg（< 100 → 水利尿確認・ADH抑制）`),
+      crit(true, '低張性低Na血症（血清浸透圧 < 280）→ 真の低Na血症'),
+      crit(null, '精神科疾患・抗精神病薬の使用歴: 心因性多飲の評価'),
+      crit(null, 'アルコール多飲歴・食事摂取不良: ビールポトマニアの評価'),
+    ].join('');
     out.push(dxBox('水利尿系疾患', '低浸透圧尿', [
       ['💧','心因性多飲（Primary Polydipsia）','精神疾患・抗精神病薬歴。水分過剰摂取で尿が薄い。'],
       ['🍺','ビールポトマニア / 低溶質摂取','アルコール多飲・絶食。溶質負荷低下により自由水排泄が追いつかない。'],
       ['🏃','激しい運動後多飲','マラソンランナーなど。'],
-    ]));
+    ], '', rat_water));
   } else {
     out.push(step('blue','STEP 2','尿浸透圧 ≥ 100 mOsm/kg → ADH 作用あり', uosmBody + '<br>ADH 依存性の水貯留。体液量評価へ進む。' + sgEstNote));
 
@@ -819,20 +934,35 @@ function analyze() {
 
       if (urine_na < 20) {
         out.push(step('green','STEP 4','尿中Na < 20 mEq/L → 腎外喪失',`尿中Na = ${urine_na} mEq/L`));
+        const rat_hypo_extra = [
+          crit(true, '体液量低下（臨床評価による）'),
+          crit(true, `尿中Na ${urine_na} mEq/L（< 20 → 腎はNaを保持: 腎外喪失）`),
+          fena !== null ? crit(fena < 1, `FENa ${fena.toFixed(2)}%（< 1% で腎外喪失を支持）`) : crit(null, 'FENa（未計算: 血清Cr・尿Crを入力してください）'),
+          k !== null ? crit(k < 3.5, `K ${k} mEq/L${k < 3.5 ? '（低K: 嘔吐または利尿薬を示唆）' : '（正常域）'}`) : crit(null, '血清K（未入力）'),
+          crit(null, '嘔吐・下痢・発汗などの腎外喪失の病歴を確認してください'),
+        ].join('');
         out.push(dxBox('低体液量性低Na血症（腎外喪失）', '腎外性', [
           ['🤮','嘔吐・下痢','消化管からのNa喪失。代謝性アルカローシス（嘔吐）や酸性（下痢）を伴うことが多い。'],
           ['🌡️','発汗・熱傷','皮膚からの大量喪失。スポーツ・高体温。'],
           ['🫀','サードスペース形成','腸閉塞・膵炎・腹膜炎など。'],
-        ], fenaNote));
+        ], fenaNote, rat_hypo_extra));
       } else {
         out.push(step('green','STEP 4','尿中Na ≥ 20 mEq/L → 腎性喪失',`尿中Na = ${urine_na} mEq/L`));
         const kNote = k !== null && k < 3.5 ? '<div class="info-box">⚠️ 低K血症（K = ' + k + ' mEq/L）あり → 利尿薬や嘔吐（代謝性アルカローシス＋腎性Na喪失）を支持。</div>' : '';
+        const rat_hypo_renal = [
+          crit(true, '体液量低下（臨床評価による）'),
+          crit(true, `尿中Na ${urine_na} mEq/L（≥ 20 → 腎性Na喪失）`),
+          fena !== null ? crit(fena >= 1, `FENa ${fena.toFixed(2)}%（≥ 1% で腎性喪失を支持）`) : crit(null, 'FENa（未計算）'),
+          k !== null ? crit(k < 3.5, `K ${k} mEq/L${k < 3.5 ? '（低K: サイアザイド系利尿薬を強く示唆）' : '（正常域）'}`) : crit(null, '血清K（未入力）'),
+          k !== null && k > 5.5 ? crit(true, `K ${k} mEq/L（高K → 一次性副腎不全を強く示唆）`) : '',
+          crit(null, '利尿薬の使用歴・頭蓋内疾患歴・副腎機能を確認してください'),
+        ].join('');
         out.push(dxBox('低体液量性低Na血症（腎性喪失）', '腎性', [
           ['💊','利尿薬（特にサイアザイド系）','チアジドは遠位尿細管の希釈機能を障害。低K血症を伴うことが多い。'],
           ['🫘','塩類喪失性腎症','慢性腎疾患・間質性腎炎。尿中Naが高い。'],
           ['🧠','塩類喪失症候群（CSWS）','頭蓋内疾患後。SIADHと異なり低体液量性。'],
           ['🦠','副腎不全（一次性）','低Na + 高K + 低血圧。コルチゾール・アルドステロン低下。'],
-        ], kNote + fenaNote));
+        ], kNote + fenaNote, rat_hypo_renal));
       }
 
     } else if (volume === 'eu') {
@@ -848,6 +978,15 @@ function analyze() {
         ? `<div class="calc-note">FENa = <strong>${fena.toFixed(2)}%</strong>${fena >= 1 ? ' → ≥ 1%：SIADH（尿中Naが高い状態）と整合。' : ' → &lt; 1%：低体液量の可能性を再評価。'}</div>`
         : '';
 
+      const rat_eu = [
+        crit(true, '体液量正常（臨床評価: 浮腫なし・脱水なし）'),
+        crit(urine_osm !== null ? urine_osm > serum_osm : null, urine_osm !== null ? `尿浸透圧 ${urine_osm} mOsm/kg ${urine_osm > serum_osm ? '> ' : '≤ '} 血清浸透圧 ${serum_osm} mOsm/kg（SIADHでは尿浸透圧 > 血清浸透圧）` : '尿浸透圧（未入力）'),
+        urine_na !== null ? crit(urine_na > 40, `尿中Na ${urine_na} mEq/L${urine_na > 40 ? '（> 40: SIADH に典型的）' : '（≤ 40: 食塩摂取低下の可能性）'}`) : crit(null, '尿中Na（未入力）'),
+        uric_acid !== null ? crit(uric_acid < 4, `尿酸 ${uric_acid} mg/dL${uric_acid < 4 ? '（低値 < 4: SIADHを強く支持）' : '（正常〜高値: SIADH以外の可能性）'}`) : crit(null, '尿酸（未入力）→ SIADH/甲状腺/副腎の鑑別に有用'),
+        fena !== null ? crit(fena >= 1, `FENa ${fena.toFixed(2)}%（SIADH では ≥ 1% が典型的）`) : crit(null, 'FENa（未計算）'),
+        serum_cr !== null ? crit(serum_cr <= 1.3, `血清Cr ${serum_cr} mg/dL${serum_cr <= 1.3 ? '（正常域 → 腎不全による高体液量性は否定的）' : '（高値 → 腎機能低下を考慮）'}`) : crit(null, '血清Cr（未入力）'),
+        k !== null && k > 5.5 ? crit(false, `K ${k} mEq/L（高K → 一次性副腎不全を考慮。等体液量性低Na血症の再評価を）`) : '',
+      ].join('');
       out.push(dxBox('等体液量性低Na血症', '等体液量', [
         ['🔑','SIADH（抗利尿ホルモン不適合分泌症候群）',
           '最多原因。肺疾患（肺炎・結核・SCLC）、CNS疾患、薬剤（SSRI・カルバマゼピン・シクロホスファミド）、手術後、HIV。' +
@@ -864,7 +1003,7 @@ function analyze() {
           ③ 尿中Na > 20〜40 mEq/L（食塩摂取が十分な場合）<br>
           ④ 臨床的に体液量正常<br>
           ⑤ 副腎・甲状腺機能正常、利尿薬未使用、腎機能正常
-        </div>`
+        </div>`, rat_eu
       ));
 
     } else { // hyper
@@ -878,16 +1017,28 @@ function analyze() {
 
       if (urine_na < 20) {
         out.push(step('green','STEP 4','尿中Na < 20 mEq/L → 腎外性貯留',`尿中Na = ${urine_na} mEq/L`));
+        const rat_hvol_extra = [
+          crit(true, '体液量増加（臨床評価: 浮腫・腹水・肺うっ血など）'),
+          crit(true, `尿中Na ${urine_na} mEq/L（< 20 → Na保持: 心不全・肝硬変・ネフローゼを示唆）`),
+          serum_cr !== null ? crit(serum_cr <= 1.5, `血清Cr ${serum_cr} mg/dL${serum_cr <= 1.5 ? '（正常域 → 腎不全よりも心不全・肝硬変が優先）' : '（高値 → 腎不全の合併も考慮）'}`) : crit(null, '血清Cr（未入力）'),
+          crit(null, '心エコー・BNP・肝機能・尿タンパクを確認してください'),
+        ].join('');
         out.push(dxBox('高体液量性低Na血症（腎外性）', '高体液量', [
           ['🫀','心不全','CO低下 → レニン-アンジオテンシン-アルドステロン系＋ADH活性化。浮腫＋肺うっ血。'],
           ['🍶','肝硬変','門脈圧亢進 → 腹水・低アルブミン。スプランクニック血管拡張 → 有効循環血液量低下。'],
           ['🧬','ネフローゼ症候群','低アルブミン → 膠質浸透圧低下 → 浮腫 → 有効循環血液量低下。'],
-        ]));
+        ], '', rat_hvol_extra));
       } else {
         out.push(step('green','STEP 4','尿中Na ≥ 20 mEq/L → 腎性',`尿中Na = ${urine_na} mEq/L`));
+        const rat_hvol_renal = [
+          crit(true, '体液量増加（臨床評価）'),
+          crit(true, `尿中Na ${urine_na} mEq/L（≥ 20 → 腎性Na排泄 = 腎不全を示唆）`),
+          serum_cr !== null ? crit(serum_cr > 1.5, `血清Cr ${serum_cr} mg/dL${serum_cr > 1.5 ? '（高値 → 腎不全を支持）' : '（比較的正常 → 初期腎不全または他の原因を再考）'}`) : crit(null, '血清Cr（未入力）→ 腎不全評価に必須'),
+          bun !== null ? crit(bun > 20, `BUN ${bun} mg/dL${bun > 20 ? '（高値 → 腎不全を支持）' : '（正常域）'}`) : crit(null, 'BUN（未入力）'),
+        ].join('');
         out.push(dxBox('高体液量性低Na血症（腎性）', '腎不全', [
           ['🫘','急性・慢性腎不全','水排泄障害による体液過剰。血清Cr・BUNの上昇を確認。'],
-        ]));
+        ], '', rat_hvol_renal));
       }
     }
   }
@@ -1067,7 +1218,7 @@ function validateField(id) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', initValidation);
+document.addEventListener('DOMContentLoaded', () => { initValidation(); renderHistory(); });
 
 // ─── 補正Na（高血糖補正）───
 function calcCorrectedNa() {
@@ -1196,6 +1347,77 @@ function updateTracking() {
   }
 
   resultEl.innerHTML = html;
+}
+
+// ─── 症例履歴 (Feature 12) ───
+const CASE_KEY = 'hyponatremia_cases_v1';
+const NUM_FIELDS   = ['serum_na','serum_osm','glucose','bun','urine_osm','urine_sg',
+                      'urine_na','ivc_diam','ivc_col','serum_k','serum_cr','urine_cr','uric_acid','weight'];
+const SEL_FIELDS   = ['onset','symptoms','volume','sex'];
+
+function getInputSnapshot() {
+  const s = {};
+  NUM_FIELDS.forEach(id => { s[id] = document.getElementById(id).value; });
+  SEL_FIELDS.forEach(id => { s[id] = document.getElementById(id).value; });
+  return s;
+}
+
+function applySnapshot(snap) {
+  NUM_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = snap[id] || ''; validateField(id); }
+  });
+  SEL_FIELDS.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = snap[id] || '';
+  });
+  syncOsmFromSg(); suggestVolume(); calcFENa(); calcCorrectedNa();
+}
+
+function saveCase() {
+  const na = document.getElementById('serum_na').value;
+  const def = na ? `Na ${na} mEq/L — ${new Date().toLocaleDateString('ja-JP')}` : `症例 ${new Date().toLocaleDateString('ja-JP')}`;
+  const name = prompt('症例名を入力してください', def);
+  if (name === null) return;
+  const cases = JSON.parse(localStorage.getItem(CASE_KEY) || '[]');
+  cases.unshift({ id: Date.now(), name: name || def, timestamp: new Date().toISOString(), snapshot: getInputSnapshot() });
+  if (cases.length > 20) cases.pop();
+  localStorage.setItem(CASE_KEY, JSON.stringify(cases));
+  renderHistory();
+}
+
+function loadCase(id) {
+  const cases = JSON.parse(localStorage.getItem(CASE_KEY) || '[]');
+  const c = cases.find(x => x.id === id);
+  if (!c) return;
+  applySnapshot(c.snapshot);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function deleteCase(id) {
+  if (!confirm('この症例を削除しますか？')) return;
+  let cases = JSON.parse(localStorage.getItem(CASE_KEY) || '[]');
+  cases = cases.filter(x => x.id !== id);
+  localStorage.setItem(CASE_KEY, JSON.stringify(cases));
+  renderHistory();
+}
+
+function renderHistory() {
+  const cases = JSON.parse(localStorage.getItem(CASE_KEY) || '[]');
+  const panel = document.getElementById('history-panel');
+  const list  = document.getElementById('history-list');
+  if (!cases.length) { panel.style.display = 'none'; return; }
+  panel.style.display = 'block';
+  list.innerHTML = cases.map(c => {
+    const d = new Date(c.timestamp);
+    const dateStr = d.toLocaleDateString('ja-JP') + ' ' + d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    return `<div class="history-item">
+      <div class="hi-name">${c.name.replace(/</g,'&lt;')}</div>
+      <div class="hi-date">${dateStr}</div>
+      <button onclick="loadCase(${c.id})" style="border:none;background:#ebf8ff;color:#2b6cb0;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;font-weight:700;flex-shrink:0;">読込</button>
+      <button onclick="deleteCase(${c.id})" style="border:none;background:#fff5f5;color:#9b2c2c;border-radius:6px;padding:4px 10px;font-size:0.78rem;cursor:pointer;flex-shrink:0;">削除</button>
+    </div>`;
+  }).join('');
 }
 
 function render(out) {
