@@ -524,6 +524,10 @@
         <input type="number" id="uric_acid" placeholder="例: 3.2" step="0.1">
       </div>
       <div class="field">
+        <label>血漿ADH <span class="unit">pg/mL（任意）</span></label>
+        <input type="number" id="adh" placeholder="例: 8.5" step="0.1" min="0">
+      </div>
+      <div class="field">
         <label>体重 <span class="unit">kg（任意）</span></label>
         <input type="number" id="weight" placeholder="例: 60" step="0.5" min="30" max="200">
       </div>
@@ -698,7 +702,7 @@ function calcFENa() {
 }
 
 function resetAll() {
-  ['serum_na','serum_osm','glucose','bun','urine_osm','urine_sg','urine_na','ivc_diam','ivc_col','serum_k','serum_cr','urine_cr','uric_acid','weight'].forEach(id => {
+  ['serum_na','serum_osm','glucose','bun','urine_osm','urine_sg','urine_na','ivc_diam','ivc_col','serum_k','serum_cr','urine_cr','uric_acid','adh','weight'].forEach(id => {
     document.getElementById(id).value = '';
   });
   ['onset','symptoms','volume','sex'].forEach(id => {
@@ -786,6 +790,7 @@ function analyze() {
   const serum_cr = val('serum_cr');
   const urine_cr = val('urine_cr');
   const uric_acid = val('uric_acid');
+  const adh = val('adh');
   const fena = (na !== null && urine_na !== null && serum_cr !== null && urine_cr !== null && urine_cr > 0)
     ? (urine_na * serum_cr) / (na * urine_cr) * 100
     : null;
@@ -812,11 +817,14 @@ function analyze() {
   const onsetLabel = onset === 'acute' ? '🕐 <strong>急性（&lt; 48時間）</strong>' : onset === 'chronic' ? '慢性（≥ 48時間）' : onset === 'unknown' ? '不明' : '未入力';
   const symptomsLabel = symptoms === 'severe' ? '🚨 <strong>重症症状あり（痙攣・意識障害）</strong>' : symptoms === 'mild' ? '軽症症状あり（頭痛・嘔気）' : symptoms === 'none' ? '無症状' : '未入力';
 
+  const adhLabel = adh !== null
+    ? `<br>血漿ADH: <strong>${adh} pg/mL</strong>（${adh < 1 ? '抑制 → 水利尿を示唆' : adh <= 5 ? '正常域' : '高値 → ADH活性亢進'}）`
+    : '';
   out.push(step('red','STEP 0','低Na血症を確認',
     `血清Na = <strong>${na} mEq/L</strong>（基準値 135〜145 mEq/L）<br>
      重症度: ${severityLabel}<br>
      発症速度: ${onsetLabel}<br>
-     症状: ${symptomsLabel}`
+     症状: ${symptomsLabel}${adhLabel}`
   ));
 
   // ─── STEP 1: 血清浸透圧 ───
@@ -876,8 +884,18 @@ function analyze() {
 
   // ─── STEP 2: 低張性 → 尿浸透圧 ───
   if (urine_osm === null) {
+    let step2hint = '';
+    if (adh !== null) {
+      if (adh < 1) {
+        step2hint = `<div class="info-box" style="margin-top:6px;">血漿ADH = <strong>${adh} pg/mL（抑制）</strong> → 水利尿を示唆（尿浸透圧 &lt; 100 mOsm/kg 相当の可能性）。尿浸透圧の実測値も確認してください。</div>`;
+      } else if (adh > 5) {
+        step2hint = `<div class="info-box" style="margin-top:6px;">血漿ADH = <strong>${adh} pg/mL（高値）</strong> → ADH活性あり（体液量評価へ進む可能性が高い）。尿浸透圧の実測値も確認してください。</div>`;
+      } else {
+        step2hint = `<div class="calc-note" style="margin-top:6px;">血漿ADH = <strong>${adh} pg/mL</strong>（正常〜軽度）。尿浸透圧または尿比重を入力してください。</div>`;
+      }
+    }
     out.push(step('orange','STEP 2','尿浸透圧を確認（未入力）',
-      '尿浸透圧または尿比重を入力してください。<br>・尿浸透圧 <strong>&lt; 100 mOsm/kg</strong>（比重 &lt; 1.003）：水利尿（多飲、低溶質摂取）<br>・尿浸透圧 <strong>≥ 100 mOsm/kg</strong>（比重 ≥ 1.003）：ADH作用あり → 体液量評価へ'));
+      '尿浸透圧または尿比重を入力してください。<br>・尿浸透圧 <strong>&lt; 100 mOsm/kg</strong>（比重 &lt; 1.003）：水利尿（多飲、低溶質摂取）<br>・尿浸透圧 <strong>≥ 100 mOsm/kg</strong>（比重 ≥ 1.003）：ADH作用あり → 体液量評価へ' + step2hint));
     render(out); return;
   }
 
@@ -985,6 +1003,7 @@ function analyze() {
         uric_acid !== null ? crit(uric_acid < 4, `尿酸 ${uric_acid} mg/dL${uric_acid < 4 ? '（低値 < 4: SIADHを強く支持）' : '（正常〜高値: SIADH以外の可能性）'}`) : crit(null, '尿酸（未入力）→ SIADH/甲状腺/副腎の鑑別に有用'),
         fena !== null ? crit(fena >= 1, `FENa ${fena.toFixed(2)}%（SIADH では ≥ 1% が典型的）`) : crit(null, 'FENa（未計算）'),
         serum_cr !== null ? crit(serum_cr <= 1.3, `血清Cr ${serum_cr} mg/dL${serum_cr <= 1.3 ? '（正常域 → 腎不全による高体液量性は否定的）' : '（高値 → 腎機能低下を考慮）'}`) : crit(null, '血清Cr（未入力）'),
+        adh !== null ? crit(adh > 2, `血漿ADH ${adh} pg/mL${adh > 2 ? '（血清浸透圧 < 280 にもかかわらず検出可能 → 不適切ADH分泌 = SIADHの根拠の1つ）' : '（正常〜低値 → SIADH以外の原因も考慮）'}`) : crit(null, '血漿ADH（未入力）→ SIADH確定診断の補助に有用'),
         k !== null && k > 5.5 ? crit(false, `K ${k} mEq/L（高K → 一次性副腎不全を考慮。等体液量性低Na血症の再評価を）`) : '',
       ].join('');
       out.push(dxBox('等体液量性低Na血症', '等体液量', [
@@ -1163,6 +1182,9 @@ const FIELD_RULES = {
   ivc_diam:  { errMin: 0.3, warnMin: 0.5, warnMax: 3.5, errMax: 5.0, unit: 'cm',
                 warnMinMsg: '極細小（重度低体液量の可能性）', warnMaxMsg: '拡張（高体液量・心不全の可能性）',
                 errMinMsg:  '異常低値を確認してください', errMaxMsg: '異常高値を確認してください' },
+  adh:       { errMin: 0,   warnMin: 0,   warnMax: 20,  errMax: 200, unit: 'pg/mL',
+                warnMinMsg: '', warnMaxMsg: '高値（SIADHまたは非浸透圧性ADH分泌を示唆）',
+                errMinMsg:  '負値は無効です', errMaxMsg: '異常高値を確認してください' },
 };
 
 function initValidation() {
@@ -1352,7 +1374,7 @@ function updateTracking() {
 // ─── 症例履歴 (Feature 12) ───
 const CASE_KEY = 'hyponatremia_cases_v1';
 const NUM_FIELDS   = ['serum_na','serum_osm','glucose','bun','urine_osm','urine_sg',
-                      'urine_na','ivc_diam','ivc_col','serum_k','serum_cr','urine_cr','uric_acid','weight'];
+                      'urine_na','ivc_diam','ivc_col','serum_k','serum_cr','urine_cr','uric_acid','adh','weight'];
 const SEL_FIELDS   = ['onset','symptoms','volume','sex'];
 
 function getInputSnapshot() {
